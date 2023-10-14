@@ -21,9 +21,10 @@ fi
 
 if [ -d "${filesdir}" ]
 then
-	totalFiles=$(ls -Rl | grep "^-" | wc -l)
-	matchLines=$(grep -r -0 ${searchstr} ${filesdir} | wc -l)
+	totalFiles=$(ls ${filesdir} -Rl | grep "^-" | wc -l)
+	matchLines=$(grep -r -o ${searchstr} ${filesdir} | wc -l)
 	echo "The number of files are ${totalFiles} and the number of matching lines are ${matchLines}"
+	exit 0
 else
 	echo "${filesdir} is not a valid directory"
 	exit 1
