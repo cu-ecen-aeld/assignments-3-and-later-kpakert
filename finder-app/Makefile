@@ -1,33 +1,38 @@
+.PHONY: default
+default: writer ;
+
 BASENAME = writer
 TARGET = $(BASENAME).out
 
 # Platform Overrides
-PLATFORM = HOST
 DEBUG = VERBOSE
 
 
 CFLAGS = -Wall -Werror -g -O0 -std=c99 -lm
-CPPFLAGS =$(INCLUDES) -D$(PLATFORM)
+CPPFLAGS =$(INCLUDES) 
 
 ifeq ($(DEBUG),VERBOSE)
   CPPFLAGS += -DVERBOSE
 endif
 
 
-ifeq ($(PLATFORM),HOST)
+ifeq ($(CROSS_COMPILE),aarch64-none-linux-gnu-)
 
+  # Compiler Flags and Defines
+  CC = aarch64-none-linux-gnu-gcc
+  LD = aarch64-none-linux-gnu-gcc
+  LDFLAGS = -Wl,-Map=$(BASENAME).map
+  SIZE = size
+
+
+else
+  
   # Compiler Flags and Defines
   CC = gcc
   LD = ld
   LDFLAGS = -Wl,-Map=$(BASENAME).map
   SIZE = size
 
-else ifeq ($(PLATFORM), MSP432)
-
-  #todo
-
-else
-  $(error PLATFORM:$(PLATFORM) is not supported)
 endif
 
 
@@ -59,5 +64,5 @@ $(TARGET): $(OBJS)
 
 .PHONY: clean
 clean:
-	rm -f $(OBJS) $(PP) $(ASM) $(BASENAME).asm $(TARGET) $(BASENAME).map
+	rm -f $(OBJS) $(PP) $(ASM) $(BASENAME).asm $(TARGET) $(BASENAME) $(BASENAME).map
 
