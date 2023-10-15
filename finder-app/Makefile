@@ -51,7 +51,7 @@ ASM = $(SOURCES:.c=.asm)
 .PHONY: build
 build: all
 .PHONY: all
-all: $(TARGET)
+all: writer
 .PHONY: compile-all
 compile-all: $(SOURCES)
 	$(CC) -c $(SOURCES) $(CFLAGS) $(CPPFLAGS)
