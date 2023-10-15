@@ -18,6 +18,7 @@
 struct sockaddr_in server_sockaddr, client_sockaddr;
 FILE *fp = NULL;
 int serv_sock, client_sock;
+char replyMessage;
 
 void sigint_handler(int signum) {
     syslog(LOG_INFO, "Caught signal, exiting");
@@ -80,6 +81,12 @@ int main(int argc, char **argv)
         close(serv_sock);
         exit(EXIT_FAILURE);
     }
+     
+     fp = fopen(LOG_FILE, "a+");
+
+     ssize_t bytes_received;
+     char c;
+
 
     while(1)
     {
@@ -89,6 +96,29 @@ int main(int argc, char **argv)
             continue;
         }
 
+        inet_ntop(AF_INET, &(client_sockaddr.sin_addr), ipinput, INET_ADDRSTRLEN);
+
+        do
+        {
+            bytes_received = recv(client_sock, &replyMessage, 1, MSG_WAITALL);
+            if(bytes_received < 0)
+            {
+                perror("recv");
+                exit(-1);
+            }
+            fprintf(fp, "%c", replyMessage);
+        } while (replyMessage != '\n');
+ 
+        rewind(fp);
+        while (!feof(fp)) {
+            c = fgetc(fp);
+            if(feof(fp))
+                break;
+            send(client_sock, &c, 1, 0);
+        }
+
+        syslog(LOG_INFO, "Closed connection from %s", ipinput);
+        close(client_sock);
     }
 
     return 0;
