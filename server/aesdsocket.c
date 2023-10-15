@@ -25,7 +25,7 @@ void sigint_handler(int signum) {
     fclose(fp);
     close(serv_sock);
     close(client_sock);
-    unlink(LOG_FILE); 
+    remove(LOG_FILE); 
     closelog();
     exit(0);
 }
