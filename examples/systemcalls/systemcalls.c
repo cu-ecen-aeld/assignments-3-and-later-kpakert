@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include <fcntl.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -70,9 +71,13 @@ bool do_exec(int count, ...)
 	{
 		/* this is the child process */
 		//printf("[%d]\n", getpid());
-		execv(command[0], command);
+		int status = execv(command[0], command);
 		//printf("Cannot exec %s: No such file or directory\n", argv[0]);
-		return false;
+
+        if (status == -1)
+        {
+		    return false;
+        }
 	} 
     else if (ret == -1)
     {
@@ -80,18 +85,20 @@ bool do_exec(int count, ...)
     }
 	else 
 	{
+
 		/* this is the parent process */
-		int pid = waitpid(ret, &status, 0);
+		int pid = wait(&status);
         if (pid == -1)
         {
             return false;
         }
-		else if (WIFEXITED(status) && WEXITSTATUS(status))
+		else if (WIFEXITED(status) )
 		{
-            if (WEXITSTATUS(status) != 0)
-                return false;
-            else
-                return true;
+            if(WEXITSTATUS(status) == 0)
+            {
+               return true;
+            }
+            return false;
 		} 
         else 
         {
@@ -101,7 +108,7 @@ bool do_exec(int count, ...)
 
     va_end(args);
 
-    return true;
+    return false;
 }
 
 /**
@@ -120,9 +127,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
+
 
 
 /*
@@ -132,8 +137,49 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
  *   The rest of the behaviour is same as do_exec()
  *
 */
+    int ret, status;
+    int fd = open(outputfile, O_WRONLY|O_TRUNC|O_CREAT, 0644);
+    
+    ret = fork();
+
+    if (ret == 0)
+    {
+        dup2(fd,1);
+        /* this is the child process */
+        //printf("[%d]\n", getpid());
+        execv(command[0], command);
+        //printf("Cannot exec %s: No such file or directory\n", argv[0]);
+        return false;
+    }
+    else if (ret == -1)
+    {
+        return false;
+    }
+    else
+    {
+        /* this is the parent process */
+        int pid = wait(&status);
+        if (pid == -1)
+        {
+            return false;
+        }
+        else if (WIFEXITED(status))
+        {
+            if(WEXITSTATUS(status) == 0)
+            {
+               return true;
+            }
+
+            return false;
+        }
+        else
+        {
+            return true;
+        }
+    }
 
     va_end(args);
 
-    return true;
+    return false;
+
 }
