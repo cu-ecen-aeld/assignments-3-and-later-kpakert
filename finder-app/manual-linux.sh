@@ -103,11 +103,11 @@ cd ${FINDER_APP_DIR}
 make clean
 make CROSS_COMPILE=${CROSS_COMPILE}
 
-# TODO: Copy the finder related scripts and executables to the /home directory
+# Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
-cp -LR ${FINDER_APP_DIR}/{finder-test.sh,writer,conf,conf,finder.sh} ${OUTDIR}/rootfs/home
+cp -LR ${FINDER_APP_DIR}/{autorun-qemu.sh,finder-test.sh,writer,conf,conf,finder.sh} ${OUTDIR}/rootfs/home
 
-# TODO: Chown the root directory
+# TODO: Chown the root directory -- is this needed?
 
 # Create initramfs.cpio.gz
 cd "${OUTDIR}/rootfs"
