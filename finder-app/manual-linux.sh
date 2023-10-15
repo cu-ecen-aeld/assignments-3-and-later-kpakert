@@ -80,7 +80,7 @@ make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
 make CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
 
 # Add library dependencies to rootfs
-CROSS_LIB_PATH=/home/kpakert/arm-cross-compiler/gcc-arm-10.2-2020.11-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc
+CROSS_LIB_PATH=$(${CROSS_COMPILE}gcc -print-sysroot)
 
 echo "Library dependencies"
 for file in $(${CROSS_COMPILE}readelf -a ${OUTDIR}/rootfs/bin/busybox | grep "program interpreter" | grep -Po "\/lib\/[a-z].*.[0-9]"); do
