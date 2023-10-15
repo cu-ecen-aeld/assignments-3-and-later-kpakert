@@ -1,4 +1,7 @@
 #include "systemcalls.h"
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
 
 /**
  * @param cmd the command to execute with system()
@@ -11,13 +14,17 @@ bool do_system(const char *cmd)
 {
 
 /*
- * TODO  add your code here
+ * Code added, leaving description of what was intended here
  *  Call the system() function with the command set in the cmd
  *   and return a boolean true if the system() call completed with success
  *   or false() if it returned a failure
 */
+    int retval = system(cmd);
 
-    return true;
+    if (retval != 0)
+        return false;
+    else
+        return true;
 }
 
 /**
@@ -45,9 +52,6 @@ bool do_exec(int count, ...)
         command[i] = va_arg(args, char *);
     }
     command[count] = NULL;
-    // this line is to avoid a compile warning before your implementation is complete
-    // and may be removed
-    command[count] = command[count];
 
 /*
  * TODO:
@@ -58,6 +62,42 @@ bool do_exec(int count, ...)
  *   as second argument to the execv() command.
  *
 */
+
+    int ret, status;
+    ret = fork();
+
+ 	if (ret == 0) 
+	{
+		/* this is the child process */
+		//printf("[%d]\n", getpid());
+		execv(command[0], command);
+		//printf("Cannot exec %s: No such file or directory\n", argv[0]);
+		return false;
+	} 
+    else if (ret == -1)
+    {
+        return false;
+    }
+	else 
+	{
+		/* this is the parent process */
+		int pid = waitpid(ret, &status, 0);
+        if (pid == -1)
+        {
+            return false;
+        }
+		else if (WIFEXITED(status) && WEXITSTATUS(status))
+		{
+            if (WEXITSTATUS(status) != 0)
+                return false;
+            else
+                return true;
+		} 
+        else 
+        {
+            return true;
+        }
+	}
 
     va_end(args);
 
