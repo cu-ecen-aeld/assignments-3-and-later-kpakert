@@ -34,7 +34,10 @@ int main(int argc, char **argv)
 {
     pid_t pid;
 
-
+    socket_desc = socket(AF_INET, SOCK_STREAM, 0);
+    server_sockaddr.sin_family = AF_INET;
+    server_sockaddr.sin_port = htons(PORT);
+    server_sockaddr.sin_addr.s_addr = INADDR_ANY;
 
     // if d is specified launch as daemon
     if(argc==2 && argv[1][1] == 'd') 
