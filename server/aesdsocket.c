@@ -33,6 +33,9 @@ void sigint_handler(int signum) {
 int main(int argc, char **argv)
 {
     pid_t pid;
+    char ipinput[INET_ADDRSTRLEN];
+
+    openlog("aesdsocket_server", LOG_CONS | LOG_PID, LOG_USER);
 
     serv_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (serv_sock == -1) {
@@ -66,6 +69,8 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
+    socklen_t client_addr_len = sizeof(client_sockaddr);
+
     signal(SIGINT, sigint_handler);
     signal(SIGTERM, sigint_handler);
 
@@ -76,8 +81,15 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
-   
+    while(1)
+    {
+        client_sock = accept(serv_sock, (struct sockaddr *)&client_sockaddr, &client_addr_len);
+        if (client_sock == -1) {
+            perror("accept");
+            continue;
+        }
 
+    }
 
     return 0;
 }
