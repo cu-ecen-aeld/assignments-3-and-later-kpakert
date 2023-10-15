@@ -71,13 +71,9 @@ bool do_exec(int count, ...)
 	{
 		/* this is the child process */
 		//printf("[%d]\n", getpid());
-		int status = execv(command[0], command);
+		execv(command[0], command);
 		//printf("Cannot exec %s: No such file or directory\n", argv[0]);
-
-        if (status == -1)
-        {
-		    return false;
-        }
+        exit(EXIT_FAILURE);
 	} 
     else if (ret == -1)
     {
@@ -149,7 +145,7 @@ bool do_exec_redirect(const char *outputfile, int count, ...)
         //printf("[%d]\n", getpid());
         execv(command[0], command);
         //printf("Cannot exec %s: No such file or directory\n", argv[0]);
-        return false;
+        exit(EXIT_FAILURE);
     }
     else if (ret == -1)
     {
