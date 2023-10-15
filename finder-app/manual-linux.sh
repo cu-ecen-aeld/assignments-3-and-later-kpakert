@@ -35,12 +35,12 @@ if [ ! -e ${OUTDIR}/linux-stable/arch/${ARCH}/boot/Image ]; then
     git checkout ${KERNEL_VERSION}
 
     # TODO: Add your kernel build steps here
-    make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- mrproper
-    make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- defconfig
-    make -j22 ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- all
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} mrproper
+    make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} defconfig
+    make -j22 ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} all
     # skip modules
-    #make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- modules
-    #make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- dtbs
+    #make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} modules
+    #make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} dtbs
   
    
 fi
@@ -77,8 +77,8 @@ else
 fi
 
 # TODO: Make and install busybox
-make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu-
-make ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- install
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
+make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
 
 
 echo "Library dependencies"
