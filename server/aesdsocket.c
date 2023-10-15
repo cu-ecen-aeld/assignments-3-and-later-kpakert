@@ -34,7 +34,8 @@ int main(int argc, char **argv)
 {
     pid_t pid;
 
-    socket_desc = socket(AF_INET, SOCK_STREAM, 0);
+    serv_sock = socket(AF_INET, SOCK_STREAM, 0);
+    memset(&server_sockaddr, 0, sizeof(server_sockaddr));
     server_sockaddr.sin_family = AF_INET;
     server_sockaddr.sin_port = htons(PORT);
     server_sockaddr.sin_addr.s_addr = INADDR_ANY;
