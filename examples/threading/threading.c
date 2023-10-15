@@ -28,6 +28,22 @@ bool start_thread_obtaining_mutex(pthread_t *thread, pthread_mutex_t *mutex,int 
      *
      * See implementation details in threading.h file comment block
      */
-    return false;
+    thread_data tparams;
+    tparams malloc(sizeof(thread_data));
+
+    tparams->mutex = mutex;
+    tparams->wait_to_obtain_ms = wait_to_obtain_ms;
+    tparams->wait_to_release_ms = wait_to_release_ms;
+    tparams->thread_complete_success = false;
+
+    if(pthread_create(thread, threadfunc, (void *)tparams) < 0)
+    {
+        return false;
+    }
+    else
+    {
+        return true;
+    }
+
 }
 
