@@ -80,7 +80,7 @@ make ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE}
 make CONFIG_PREFIX=${OUTDIR}/rootfs ARCH=${ARCH} CROSS_COMPILE=${CROSS_COMPILE} install
 
 # Add library dependencies to rootfs
-CROSS_LIB_PATH=/home/arm-cross-compiler/gcc-arm-10.2-2020.11-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc
+CROSS_LIB_PATH=/home/kpakert/arm-cross-compiler/gcc-arm-10.2-2020.11-x86_64-aarch64-none-linux-gnu/aarch64-none-linux-gnu/libc
 
 echo "Library dependencies"
 for file in $(${CROSS_COMPILE}readelf -a ${OUTDIR}/rootfs/bin/busybox | grep "program interpreter" | grep -Po "\/lib\/[a-z].*.[0-9]"); do
@@ -105,10 +105,9 @@ make CROSS_COMPILE=${CROSS_COMPILE}
 
 # Copy the finder related scripts and executables to the /home directory
 # on the target rootfs
-cp -LR ${FINDER_APP_DIR}/{autorun-qemu.sh,finder-test.sh,writer,conf,finder.sh} ${OUTDIR}/rootfs/home
+cp -LR ${FINDER_APP_DIR}/{autorun-qemu.sh,finder-test.sh,writer,conf,conf,finder.sh} ${OUTDIR}/rootfs/home
 
-# Chown the root directory -- is this needed?
-sudo chown -R root:root ${OUTDIR}/rootfs
+# TODO: Chown the root directory -- is this needed?
 
 # Create initramfs.cpio.gz
 cd "${OUTDIR}/rootfs"
