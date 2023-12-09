@@ -11,6 +11,9 @@
 #include <unistd.h>
 #include <syslog.h>
 #include <netinet/in.h>
+#include <sys/queue.h>
+#include <pthread.h>
+#include <stdatomic.h>
 
 #define LOG_FILE "/var/tmp/aesdsocketdata"
 #define PORT 9000
@@ -19,6 +22,27 @@ struct sockaddr_in server_sockaddr, client_sockaddr;
 FILE *fp = NULL;
 int serv_sock, client_sock;
 char replyMessage;
+
+atomic_int is_canceled = 0;
+
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+
+typedef struct _thread_args
+{
+    pthread_mutex_t * mutex;
+    atomic_int * canceled;
+    atomic_int finished;
+    int sock_fd;
+} thread_args;
+
+typedef struct node
+{   
+    TAILQ_ENTRY(node) nodes;
+    pthread_t thread;
+
+    thread_args args;
+} list_node;
 
 void sigint_handler(int signum) {
     syslog(LOG_INFO, "Caught signal, exiting");
