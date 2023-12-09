@@ -93,6 +93,14 @@ void * worker(void * arg)
         send(client_sock, &c, 1, 0);
     }
 
+    // release lock
+    ret = pthread_mutex_unlock(e->mutex);
+    if(ret == -1)
+    {
+        syslog(LOG_ERR,"mutex unlock failed\n");
+        return NULL;
+    }
+
     syslog(LOG_INFO, "Closed connection from %s", ipinput);
     close(client_sock);
 
