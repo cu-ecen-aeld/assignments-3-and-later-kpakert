@@ -8,7 +8,7 @@ TARGET = $(BASENAME).out
 DEBUG = VERBOSE
 
 
-CFLAGS = -Wall -Werror -g -O0 -std=c99 -lm
+CFLAGS = -Wall -Werror -g -O0 -std=c99 -lm -pthread
 CPPFLAGS =$(INCLUDES) 
 
 ifeq ($(DEBUG),VERBOSE)

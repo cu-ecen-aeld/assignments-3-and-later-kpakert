@@ -19,8 +19,7 @@
 #define PORT 9000
 
 struct sockaddr_in server_sockaddr, client_sockaddr;
-FILE *fp = NULL;
-int serv_sock, client_sock;
+int serv_sock;
 char replyMessage;
 
 atomic_int is_canceled = 0;
@@ -46,21 +45,80 @@ typedef struct node
 
 void sigint_handler(int signum) {
     syslog(LOG_INFO, "Caught signal, exiting");
-    fclose(fp);
+    //fclose(fp);
     close(serv_sock);
-    close(client_sock);
+    //close(client_sock);
     remove(LOG_FILE); 
     closelog();
-    exit(0);
+    is_canceled = 1;
+}
+
+void * worker(void * arg)
+{
+    int ret;
+    FILE *fp = fopen(LOG_FILE, "a+");
+    char ipinput[INET_ADDRSTRLEN];
+    thread_args * e = (thread_args *)arg;
+    ssize_t bytes_received;
+    char c;
+
+    int client_sock = e->sock_fd;
+
+    // acquire lock
+    ret = pthread_mutex_lock(e->mutex);
+    if(ret == -1)
+    {
+        syslog(LOG_ERR,"mutex lock failed\n");
+        return NULL;
+    }
+
+    inet_ntop(AF_INET, &(client_sockaddr.sin_addr), ipinput, INET_ADDRSTRLEN);
+
+    do
+    {
+        bytes_received = recv(client_sock, &replyMessage, 1, MSG_WAITALL);
+        if(bytes_received < 0)
+        {
+            perror("recv");
+            exit(-1);
+        }
+        fprintf(fp, "%c", replyMessage);
+    } while (replyMessage != '\n');
+
+    rewind(fp);
+    while (!feof(fp)) {
+        c = fgetc(fp);
+        if(feof(fp))
+            break;
+        send(client_sock, &c, 1, 0);
+    }
+
+    syslog(LOG_INFO, "Closed connection from %s", ipinput);
+    close(client_sock);
+
+    fclose(fp);
+
+    e->finished = 1;
+
+
+    return NULL;
 }
 
 
 int main(int argc, char **argv)
 {
     pid_t pid;
-    char ipinput[INET_ADDRSTRLEN];
+    int ret;
+
 
     openlog("aesdsocket_server", LOG_CONS | LOG_PID, LOG_USER);
+
+    ret = pthread_mutex_init(&mutex, NULL);
+    if(ret != 0)
+    {
+        syslog(LOG_ERR,"mutex init failed");
+        return -1;
+    }
 
     serv_sock = socket(AF_INET, SOCK_STREAM, 0);
     if (serv_sock == -1) {
@@ -83,6 +141,11 @@ int main(int argc, char **argv)
         exit(0);
     
     }
+
+    TAILQ_HEAD(head_s, node) head;
+    TAILQ_INIT(&head);
+
+
     int opt = 1;
 	if (setsockopt(serv_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(int)) < 0) {
         perror("setsockopt(SO_REUSEADDR) failed");
@@ -106,43 +169,58 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
      
-     fp = fopen(LOG_FILE, "a+");
-
-     ssize_t bytes_received;
-     char c;
 
 
-    while(1)
+    while(!is_canceled)
     {
-        client_sock = accept(serv_sock, (struct sockaddr *)&client_sockaddr, &client_addr_len);
+        int client_sock = accept(serv_sock, (struct sockaddr *)&client_sockaddr, &client_addr_len);
         if (client_sock == -1) {
             perror("accept");
             continue;
         }
 
-        inet_ntop(AF_INET, &(client_sockaddr.sin_addr), ipinput, INET_ADDRSTRLEN);
+        list_node * new_node = NULL;
 
-        do
+        new_node = malloc(sizeof(list_node));
+        if(new_node == NULL)
         {
-            bytes_received = recv(client_sock, &replyMessage, 1, MSG_WAITALL);
-            if(bytes_received < 0)
-            {
-                perror("recv");
-                exit(-1);
-            }
-            fprintf(fp, "%c", replyMessage);
-        } while (replyMessage != '\n');
- 
-        rewind(fp);
-        while (!feof(fp)) {
-            c = fgetc(fp);
-            if(feof(fp))
-                break;
-            send(client_sock, &c, 1, 0);
+            syslog(LOG_ERR,"Node malloc failed");
+            return -1;
         }
 
-        syslog(LOG_INFO, "Closed connection from %s", ipinput);
-        close(client_sock);
+        new_node->args.mutex = &mutex;
+        new_node->args.canceled = &is_canceled;
+        new_node->args.finished = 0;
+        new_node->args.sock_fd = client_sock;
+
+        TAILQ_INSERT_TAIL(&head, new_node, nodes);
+
+        pthread_create(&new_node->thread, NULL, worker, &new_node->args);
+
+        list_node * np = NULL; 
+
+        TAILQ_FOREACH(np, &head, nodes)
+        {
+            if(np->args.finished)
+            {
+                pthread_join(np->thread, NULL);
+
+                close(np->args.sock_fd);
+                TAILQ_REMOVE(&head, np, nodes);
+                free(np);
+            }
+        }
+    }
+
+    list_node * np = TAILQ_FIRST(&head);
+    while (np != NULL)
+    {
+        pthread_join(np->thread, NULL);
+        close(np->args.sock_fd);
+        
+        list_node * n_next = TAILQ_NEXT(np, nodes);
+        free(np);
+        np = n_next;
     }
 
     return 0;
