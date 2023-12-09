@@ -9,11 +9,13 @@
 #include <string.h>
 #include <sys/syslog.h>
 #include <unistd.h>
-#include <syslog.h>
 #include <netinet/in.h>
 #include <sys/queue.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <unistd.h>
+#include <sys/time.h>
+
 
 #define LOG_FILE "/var/tmp/aesdsocketdata"
 #define PORT 9000
@@ -42,6 +44,13 @@ typedef struct node
 
     thread_args args;
 } list_node;
+
+typedef struct
+{
+    pthread_t thread_id;
+    pthread_mutex_t *mutex;
+    int time_interval_secs;
+}timestamp_data_t;
 
 void sigint_handler(int signum) {
     syslog(LOG_INFO, "Caught signal, exiting");
@@ -112,6 +121,70 @@ void * worker(void * arg)
     return NULL;
 }
 
+void * timer(void * thread_param)
+{
+    int ret;
+    timestamp_data_t *thread_ts_data = (timestamp_data_t *)thread_param;
+
+    time_t t ;
+    struct tm *tmp ;
+    char time_stamp[50];
+    struct timespec ts;
+
+    syslog(LOG_INFO, "Timestamp thread started");
+
+    while(1)
+    {
+        ret = clock_gettime(CLOCK_MONOTONIC, &ts);
+        if(ret)
+        {
+            syslog(LOG_ERR,"clock_gettime failed");
+            return NULL;
+        }
+        ts.tv_sec += thread_ts_data->time_interval_secs;
+        ret = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, \
+                                &ts, NULL);
+        if(ret)
+        {
+            syslog(LOG_ERR,"clock_nanosleep failed");
+            return NULL;
+        }
+
+        time( &t );
+
+        tmp = localtime( &t );
+     
+        // using strftime to display time
+        int time_len = strftime(time_stamp, sizeof(time_stamp), "timestamp: %Y, %b %d, %H:%M:%S\n", tmp);
+
+        // acquire lock
+        ret = pthread_mutex_lock(thread_ts_data->mutex);
+        if(ret == -1)
+        {
+            syslog(LOG_ERR,"mutex lock failed");
+            return NULL;
+        }
+        FILE * data_file = fopen(LOG_FILE, "ab");
+
+        // write data to file
+        ret = write(data_file, time_stamp, time_len);
+        if(ret == -1)
+        {
+            syslog(LOG_ERR,"File write failed");
+            return NULL;
+        }
+
+        fclose(data_file);
+
+        // release lock
+        ret = pthread_mutex_unlock(thread_ts_data->mutex);
+        if(ret == -1)
+        {
+            syslog(LOG_ERR,"mutex unlock failed");
+            return NULL;
+        }
+    }
+}
 
 int main(int argc, char **argv)
 {
@@ -149,6 +222,13 @@ int main(int argc, char **argv)
         exit(0);
     
     }
+
+    thread_args args = {};
+    args.sock_fd = -1;
+    args.mutex = &mutex;
+    args.canceled = &is_canceled;
+    pthread_t timer_thread;
+    pthread_create(&timer_thread, NULL, timer, &args);
 
     TAILQ_HEAD(head_s, node) head;
     TAILQ_INIT(&head);
