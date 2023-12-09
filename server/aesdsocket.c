@@ -25,8 +25,7 @@ int serv_sock;
 char replyMessage;
 
 atomic_int is_canceled = 0;
-
-
+FILE *serverfile = NULL;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 typedef struct _thread_args
@@ -44,13 +43,6 @@ typedef struct node
 
     thread_args args;
 } list_node;
-
-typedef struct
-{
-    pthread_t thread_id;
-    pthread_mutex_t *mutex;
-    int time_interval_secs;
-}timestamp_data_t;
 
 void sigint_handler(int signum) {
     syslog(LOG_INFO, "Caught signal, exiting");
@@ -121,69 +113,61 @@ void * worker(void * arg)
     return NULL;
 }
 
-void * timer(void * thread_param)
+void * timer(void * arg)
 {
-    int ret;
-    timestamp_data_t *thread_ts_data = (timestamp_data_t *)thread_param;
+        
+    char output[200];
+    int ret=0;
+    time_t t;
+    struct tm *buff;
 
-    time_t t ;
-    struct tm *tmp ;
-    char time_stamp[50];
-    struct timespec ts;
 
-    syslog(LOG_INFO, "Timestamp thread started");
+    thread_args * e = (thread_args *)arg;
+    
 
-    while(1)
+    while(!is_canceled)
     {
-        ret = clock_gettime(CLOCK_MONOTONIC, &ts);
-        if(ret)
-        {
-            syslog(LOG_ERR,"clock_gettime failed");
-            return NULL;
+        //sleep for the first 10 seconds to avoid tripping up the autotest
+        sleep(10);
+
+        t=time(NULL);
+        buff = localtime(&t);
+        if(buff == NULL){
+            syslog(LOG_ERR, "Failure with getting local time: %s", strerror(errno));
+            printf("Timer failure with getting local time \n");
+            break;
         }
-        ts.tv_sec += thread_ts_data->time_interval_secs;
-        ret = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, \
-                                &ts, NULL);
-        if(ret)
-        {
-            syslog(LOG_ERR,"clock_nanosleep failed");
-            return NULL;
-        }
+        
+        ret = strftime(output,sizeof(output),"timestamp:%a, %d %b %Y %T %z \n", buff);
 
-        time( &t );
-
-        tmp = localtime( &t );
-     
-        // using strftime to display time
-        int time_len = strftime(time_stamp, sizeof(time_stamp), "timestamp: %Y, %b %d, %H:%M:%S\n", tmp);
-
-        // acquire lock
-        ret = pthread_mutex_lock(thread_ts_data->mutex);
-        if(ret == -1)
-        {
-            syslog(LOG_ERR,"mutex lock failed");
-            return NULL;
-        }
-        FILE * data_file = fopen(LOG_FILE, "ab");
-
-        // write data to file
-        ret = write(data_file, time_stamp, time_len);
-        if(ret == -1)
-        {
-            syslog(LOG_ERR,"File write failed");
-            return NULL;
+        if(ret==0){
+            syslog(LOG_ERR, "Failure with timer string: %s", strerror(errno));
+            printf("Timer string failure \n");
+            break;
         }
 
-        fclose(data_file);
+        printf("Timer output: %s \n", output);
 
-        // release lock
-        ret = pthread_mutex_unlock(thread_ts_data->mutex);
-        if(ret == -1)
-        {
-            syslog(LOG_ERR,"mutex unlock failed");
-            return NULL;
+        pthread_mutex_lock(e->mutex);
+
+        serverfile = fopen(LOG_FILE, "a");
+        if (serverfile < 0)
+        {  
+            syslog(LOG_ERR, "Failed to open file to write timer: %s \n", strerror(errno));
+            printf("Failed to open file in timer \n");
+            pthread_mutex_unlock(&mutex);
+            break;
         }
+
+        //write buffer value to serverfile before resetting buffer and closing file
+        fprintf(serverfile,"%s", output);
+        
+        fclose(serverfile);
+        pthread_mutex_unlock(e->mutex);
+        
     }
+
+    return e;
 }
 
 int main(int argc, char **argv)
@@ -223,16 +207,17 @@ int main(int argc, char **argv)
     
     }
 
-    thread_args args = {};
-    args.sock_fd = -1;
-    args.mutex = &mutex;
-    args.canceled = &is_canceled;
-    pthread_t timer_thread;
-    pthread_create(&timer_thread, NULL, timer, &args);
-
     TAILQ_HEAD(head_s, node) head;
     TAILQ_INIT(&head);
 
+    list_node * time_node = NULL;
+    time_node = malloc(sizeof(list_node));
+    time_node->args.sock_fd = -1;
+    time_node->args.mutex = &mutex;
+    time_node->args.canceled = &is_canceled;
+
+    TAILQ_INSERT_TAIL(&head, time_node, nodes);
+    pthread_create(&time_node->thread, NULL, timer, &time_node->args);
 
     int opt = 1;
 	if (setsockopt(serv_sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(int)) < 0) {
