@@ -1,14 +1,21 @@
-TARGET = aesdsocket
+#################### Makefile #####################
+ 
+################# Compiler Flags ##################
 CC ?= $(CROSS_COMPILE)gcc
-CFLAGS ?= -Wall -Werror -g -O0 
-LIB ?= -lpthread
+CFLAGS ?= -Wall -Werror -g
+LDFLAGS ?= -pthread -lrt
 
-.PHONY : all
+############## Source & Executable ################
+SRCS = aesdsocket.c
+EXEC = aesdsocket
 
-all: aesdsocket.c
-	$(CC) aesdsocket.c $(CFLAGS) -o aesdsocket $(LIB)
+##################### Targets #####################
+default : $(EXEC)
+all : $(EXEC)
 
+$(EXEC): $(SRCS)
+	$(CC) $(SRCS) $(CFLAGS) $(LDFLAGS) -o $(EXEC)
 
-.PHONY : clean
+###################### Clean ######################
 clean:
-	-rm -f *.o aesdsocket
+	-rm -rf *.o $(EXEC)
