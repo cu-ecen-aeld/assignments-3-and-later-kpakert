@@ -33,7 +33,7 @@ int aesd_open(struct inode *inode, struct file *filp)
     struct aesd_dev *dev;
     dev = container_of(inode->i_cdev, struct aesd_dev, cdev);
     filp->private_data = dev;
-    
+
     return 0;
 }
 
@@ -51,9 +51,30 @@ ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
 {
     ssize_t retval = 0;
     PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
-    /**
-     * TODO: handle read
-     */
+    
+    struct aesd_dev *dev = filp->private_data;
+    struct aesd_buffer_entry *start_entry;
+    size_t start_entry_off = 0, read_length = 0;
+
+    if (buf == NULL) {
+        return -EFAULT;
+    }
+    start_entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->aesd_cb,
+            *f_pos, &start_entry_off);
+
+    if (start_entry == NULL) {
+        return 0;
+    }  
+    read_length = start_entry->size - start_entry_off;
+    if (read_length > count) {
+        read_length = count;
+    }
+    if (copy_to_user(buf, &(start_entry->buffptr[start_entry_off]), read_length)) {
+        return -EFAULT;
+    }
+    retval = read_length;
+    *f_pos = *f_pos + read_length;
+
     return retval;
 }
 
@@ -62,9 +83,67 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
 {
     ssize_t retval = -ENOMEM;
     PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
-    /**
-     * TODO: handle write
-     */
+    
+    struct aesd_dev *dev = filp->private_data;
+    struct aesd_buffer_entry new_entry;
+    uint8_t in_pos = 0;
+    size_t bytes_missing = 0;
+
+    if (buf == NULL) {
+        return -EFAULT;
+    }
+
+    if (mutex_lock_interruptible(&dev->mx_lock)) {
+        return -ERESTARTSYS;
+    }
+    if (dev->tmp_size > 0) {
+
+        dev->tmp_buf = krealloc(dev->tmp_buf, dev->tmp_size + count, GFP_KERNEL);
+        if (!dev->tmp_buf) {
+            return -ENOMEM;
+        }
+
+        memset(&dev->tmp_buf[dev->tmp_size], 0, count);
+
+        bytes_missing = copy_from_user(&dev->tmp_buf[dev->tmp_size], buf, count);
+
+        retval = count - bytes_missing;
+        dev->tmp_size += retval;
+
+    } else {
+        dev->tmp_buf = kmalloc(count, GFP_KERNEL);
+        if (!dev->tmp_buf) {
+            return -ENOMEM;
+        }
+
+        memset(dev->tmp_buf, 0, count);
+
+        bytes_missing = copy_from_user(dev->tmp_buf, buf, count);
+
+        retval = count - bytes_missing;
+        dev->tmp_size = retval;
+    }
+
+    if (memchr(dev->tmp_buf, '\n', dev->tmp_size)) {
+        if (dev->aesd_cb.full) {
+            in_pos = dev->aesd_cb.in_offs;
+            if (dev->aesd_cb.entry[in_pos].buffptr != NULL) {
+                kfree(dev->aesd_cb.entry[in_pos].buffptr);
+            }
+            dev->aesd_cb.entry[in_pos].size = 0;
+        }
+
+        new_entry.buffptr = dev->tmp_buf;
+        new_entry.size = dev->tmp_size;
+        aesd_circular_buffer_add_entry(&dev->aesd_cb, &new_entry);
+
+        dev->tmp_buf = NULL;
+        dev->tmp_size = 0;
+    } 
+
+    mutex_unlock(&dev->mx_lock);
+    dev->buffer_size += retval;
+
     return retval;
 }
 struct file_operations aesd_fops = {
@@ -104,9 +183,10 @@ int aesd_init_module(void)
     }
     memset(&aesd_device,0,sizeof(struct aesd_dev));
 
-    /**
-     * TODO: initialize the AESD specific portion of the device
-     */
+    aesd_circular_buffer_init(&aesd_device.aesd_cb);
+    aesd_device.tmp_buf = NULL;
+    aesd_device.tmp_size = 0;
+    mutex_init(&aesd_device.mx_lock);
 
     result = aesd_setup_cdev(&aesd_device);
 
@@ -123,9 +203,17 @@ void aesd_cleanup_module(void)
 
     cdev_del(&aesd_device.cdev);
 
-    /**
-     * TODO: cleanup AESD specific poritions here as necessary
-     */
+    uint8_t index;
+    struct aesd_circular_buffer *buffer = &aesd_device.aesd_cb;
+    struct aesd_buffer_entry *entry;
+
+    AESD_CIRCULAR_BUFFER_FOREACH(entry, buffer, index) {
+    if ((entry->size > 0) && (entry->buffptr != NULL)) {
+        kfree(entry->buffptr);
+        entry->size = 0;
+    }
+    }
+    mutex_destroy(&aesd_device.mx_lock);
 
     unregister_chrdev_region(devno, 1);
 }

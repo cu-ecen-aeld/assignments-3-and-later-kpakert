@@ -13,6 +13,9 @@ EXEC = aesdsocket
 default : $(EXEC)
 all : $(EXEC)
 
+EXTRA_CFLAGS = -DUSE_AESD_CHAR_DEVICE=1
+EXTRA_CFLAGS += -USE_AESD_CHAR_DEVICE=1
+
 $(EXEC): $(SRCS)
 	$(CC) $(SRCS) $(CFLAGS) $(LDFLAGS) -o $(EXEC)
 
