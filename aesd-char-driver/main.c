@@ -96,35 +96,35 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     if (mutex_lock_interruptible(&dev->lock)) {
         return -ERESTARTSYS;
     }
-    if (dev->dev_buf > 0) {
+    if (dev->buf_size > 0) {
 
-        dev->tmp_buf = krealloc(dev->tmp_buf, dev->dev_buf + count, GFP_KERNEL);
-        if (!dev->tmp_buf) {
+        dev->dev_buf = krealloc(dev->dev_buf, dev->buf_size + count, GFP_KERNEL);
+        if (!dev->dev_buf) {
             return -ENOMEM;
         }
 
-        memset(&dev->tmp_buf[dev->dev_buf], 0, count);
+        memset(&dev->dev_buf[dev->buf_size], 0, count);
 
-        bytes_missing = copy_from_user(&dev->tmp_buf[dev->dev_buf], buf, count);
+        bytes_missing = copy_from_user(&dev->dev_buf[dev->buf_size], buf, count);
 
         retval = count - bytes_missing;
-        dev->dev_buf += retval;
+        dev->buf_size += retval;
 
     } else {
-        dev->tmp_buf = kmalloc(count, GFP_KERNEL);
-        if (!dev->tmp_buf) {
+        dev->dev_buf = kmalloc(count, GFP_KERNEL);
+        if (!dev->dev_buf) {
             return -ENOMEM;
         }
 
-        memset(dev->tmp_buf, 0, count);
+        memset(dev->dev_buf, 0, count);
 
-        bytes_missing = copy_from_user(dev->tmp_buf, buf, count);
+        bytes_missing = copy_from_user(dev->dev_buf, buf, count);
 
         retval = count - bytes_missing;
-        dev->dev_buf = retval;
+        dev->buf_size = retval;
     }
 
-    if (memchr(dev->tmp_buf, '\n', dev->dev_buf)) {
+    if (memchr(dev->dev_buf, '\n', dev->buf_size)) {
         if (dev->aesd_cb.full) {
             in_pos = dev->aesd_cb.in_offs;
             if (dev->aesd_cb.entry[in_pos].buffptr != NULL) {
@@ -133,12 +133,12 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
             dev->aesd_cb.entry[in_pos].size = 0;
         }
 
-        new_entry.buffptr = dev->tmp_buf;
-        new_entry.size = dev->dev_buf;
+        new_entry.buffptr = dev->dev_buf;
+        new_entry.size = dev->buf_size;
         aesd_circular_buffer_add_entry(&dev->aesd_cb, &new_entry);
 
-        dev->tmp_buf = NULL;
-        dev->dev_buf = 0;
+        dev->dev_buf = NULL;
+        dev->buf_size = 0;
     } 
 
     mutex_unlock(&dev->lock);
@@ -184,8 +184,8 @@ int aesd_init_module(void)
     memset(&aesd_device,0,sizeof(struct aesd_dev));
 
     aesd_circular_buffer_init(&aesd_device.aesd_cb);
-    aesd_device.tmp_buf = NULL;
-    aesd_device.dev_buf = 0;
+    aesd_device.dev_buf = NULL;
+    aesd_device.buf_size = 0;
     mutex_init(&aesd_device.lock);
 
     result = aesd_setup_cdev(&aesd_device);
