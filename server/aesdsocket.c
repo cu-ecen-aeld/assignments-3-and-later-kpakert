@@ -15,11 +15,13 @@
 #include <stdatomic.h>
 #include <unistd.h>
 #include <sys/time.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 
 #define LOG_FILE "/var/tmp/aesdsocketdata"
 #define PORT 9000
-#define BUFFERSIZE 20480 
+#define BUFFERSIZE 1024 
 
 struct sockaddr_in server_sockaddr, client_sockaddr;
 int serv_sock;
@@ -27,6 +29,7 @@ char replyMessage;
 
 atomic_int is_canceled = 0;
 FILE *serverfile = NULL;
+int data_file_fd;
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 typedef struct _thread_args
@@ -57,104 +60,123 @@ void sigint_handler(int signum) {
 
 void * worker(void * threadparam)
 {
-     char buffer_recv[BUFFERSIZE];
-    char buffer_send[BUFFERSIZE];
-    char buffer_packet[BUFFERSIZE];
-    ssize_t recvfd = 0;
-    int filesize = 0;
-    ssize_t packetsize = 0;
-    int sendret=0;
+        int ret;
+    // receive bytes
+	ssize_t recv_bytes = 0;
+	char recv_buf[BUFFERSIZE];
+	
+	// send bytes
+	ssize_t send_bytes = 0;
+	char send_buf[BUFFERSIZE];
+	ssize_t bytes_read;
 
-    buffer_recv[0]='\0';
-    buffer_send[0]='\0';
-    buffer_packet[0]='\0';
-    thread_args *e = (thread_args *)threadparam;
+    // to print IP
+    char s[INET6_ADDRSTRLEN];
 
-    //while loop to receive data from client, write to txt file, and then send back
-    while ((recvfd = recv(e->sock_fd, buffer_recv, BUFFERSIZE - 1, 0)) > 0)
+    memset(recv_buf, 0, BUFFERSIZE);
+    memset(send_buf, 0, BUFFERSIZE);
+
+    thread_args *thread_data = (thread_args*)threadparam;
+
+
+
+    /********************************************************* 
+    *  STEP 4 : 
+    *  Receives data over the connection and 
+    *  appends to file /var/tmp/aesdsocketdata
+    *********************************************************/
+
+    // acquire lock
+    ret = pthread_mutex_lock(thread_data->mutex);
+    if(ret == -1)
     {
-        //check if full packet was received until you find a newline character
-        if(buffer_recv[recvfd-1]!='\n')
-        {
-            //printf("Received packet of size %zu \n", recvfd);
-            //printf("%s",buffer_recv);
-            printf("Did not receive full packet.\n");
-            for(ssize_t i=0; i < (recvfd); i++)
-            {
-            buffer_packet[i+packetsize] = buffer_recv[i];
-            }
-                
-            packetsize += recvfd;
-                
-            //buffer_recv[0]='\0';  
-        }
-        else //end of packet found, go into this part
-        {
-            //printf("Received packet of size %zu \n", recvfd);
-            //printf("Received full packet of size %zu \n", (recvfd + packetsize));
-            printf("Received full packet \n");
-                
-            for(ssize_t i=0; i < (recvfd); i++)
-            {
-                buffer_packet[i+packetsize] = buffer_recv[i];
-            }
-
-            packetsize += recvfd;
-
-            buffer_packet[packetsize] = '\0';
-
-            //open file to only append
-            pthread_mutex_lock(e->mutex);
-
-            printf("Opening file \n");
-            serverfile = fopen(LOG_FILE, "a");
-            if (serverfile < 0)
-            {  
-                syslog(LOG_ERR, "Failed to open file to write: %s", strerror(errno));
-                printf("Failed to open file \n");
-                goto conn_fail;
-            }
-
-            //write buffer value to serverfile before resetting buffer and closing file
-            fprintf(serverfile,"%s", buffer_packet);
-            fclose(serverfile);
-
-            //open file to read only
-            serverfile = fopen(LOG_FILE, "r");
-            filesize = fread(buffer_send, 1, BUFFERSIZE, serverfile);
-            syslog(LOG_INFO, "Success: Read file");
-            printf("Success, read file.\n");
-            fclose(serverfile);
-
-            pthread_mutex_unlock(e->mutex);
-
-
-            //Sending file to client
-            syslog(LOG_INFO, "Sending file to client");
-            printf("Sending file to client \n");
-            //printf("Sending: %s", buffer_send);
-            sendret = send(e->sock_fd,buffer_send,filesize,0);
-            if(sendret == -1)
-            {
-                syslog(LOG_ERR, "Failed to send file to client: %s", strerror(errno));
-                printf("Failed to send file to client \n");
-            }
-                
-            packetsize = 0;
-            
-        }             
-
+        syslog(LOG_ERR,"mutex lock failed\n");
+        return NULL;
     }
 
-    e->finished = 1;
+    // receive and write
+    do
+    {
+        // receive data on socket
+        recv_bytes = recv(thread_data->sock_fd, recv_buf, BUFFERSIZE, 0);
+        if(recv_bytes == -11)
+        {
+            syslog(LOG_ERR,"Receive failed");
+            return NULL;
+        }
 
+        // write data to file
+        ret = write(data_file_fd, recv_buf, recv_bytes);
+        if(ret == -11)
+        {
+            syslog(LOG_ERR,"File write failed");
+            return NULL;
+        }
+    }while((memchr(recv_buf, '\n', recv_bytes)) == NULL);
+
+    // release lock
+    ret = pthread_mutex_unlock(thread_data->mutex);
+    if(ret == -1)
+    {
+        syslog(LOG_ERR,"mutex unlock failed\n");
+        return NULL;
+    }
+
+    /********************************************************* 
+    *  STEP 5 : 
+    *  Returns the full content of /var/tmp/aesdsocketdata 
+    *  to the client as soon as the received data packet 
+    *  completes.
+    *********************************************************/
+    // acquire lock
+    ret = pthread_mutex_lock(thread_data->mutex);
+    if(ret == -1)
+    {
+        syslog(LOG_ERR,"mutex lock failed\n");
+        return NULL;
+    }
+
+    off_t seek_ret = lseek(data_file_fd, 0, SEEK_SET);
+    if(seek_ret == -1)
+    {
+        syslog(LOG_ERR,"lseek failed");
+        return NULL;
+    }
+
+    // read and send
+    do
+    {
+        // read data from file
+        bytes_read = read(data_file_fd, send_buf, BUFFERSIZE);
+        if(bytes_read == -11)
+        {
+            syslog(LOG_ERR,"File read failed");
+            return NULL;
+        }
+        
+        // send data on socket
+        send_bytes = send(thread_data->sock_fd, send_buf, bytes_read, 0);
+        if(send_bytes == -11)
+        {
+            syslog(LOG_ERR,"Send failed");
+            return NULL;
+        }
+    }while(bytes_read > 0);
+
+    // release lock
+    ret = pthread_mutex_unlock(thread_data->mutex);
+    if(ret == -1)
+    {
+        syslog(LOG_ERR,"mutex unlock failed\n");
+        return NULL;
+    }
+
+    close(thread_data->sock_fd);
+    syslog(LOG_INFO,"Closed connection from %s",s);
+
+    // thread completed
+    thread_data->finished = 1;
     return threadparam;
-
-    conn_fail:
-        pthread_mutex_unlock (e->mutex);
-        e->finished = 1;
-
-        return threadparam;
 }
 
 void * timer(void * arg)
@@ -249,6 +271,19 @@ int main(int argc, char **argv)
         exit(0);
     
     }
+
+    int file_flags;
+	mode_t file_mode;
+
+    // open data file
+	file_flags = (O_RDWR | O_CREAT | O_APPEND);
+	file_mode = (S_IWUSR | S_IRUSR | S_IWGRP | S_IRGRP | S_IROTH);
+	data_file_fd = open(LOG_FILE, file_flags, file_mode);
+	if(data_file_fd == -1)
+	{
+		syslog(LOG_ERR,"Data file open failed");
+        return -1;
+	}
 
     TAILQ_HEAD(head_s, node) head;
     TAILQ_INIT(&head);
