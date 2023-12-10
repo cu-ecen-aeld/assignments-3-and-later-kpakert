@@ -126,7 +126,6 @@ void * worker(void * threadparam)
             printf("Success, read file.\n");
             fclose(serverfile);
 
-            pthread_mutex_unlock(e->mutex);
 
 
             //Sending file to client
@@ -141,6 +140,8 @@ void * worker(void * threadparam)
             }
                 
             packetsize = 0;
+
+            pthread_mutex_unlock(e->mutex);
             
         }             
 
