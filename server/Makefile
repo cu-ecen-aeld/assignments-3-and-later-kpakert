@@ -6,7 +6,7 @@ CFLAGS ?= -Wall -Werror -g
 LDFLAGS ?= -pthread -lrt
 
 ############## Source & Executable ################
-SRCS = aesdsocket.c
+SRCS = aesdsocket-classmate.c
 EXEC = aesdsocket
 
 ##################### Targets #####################
