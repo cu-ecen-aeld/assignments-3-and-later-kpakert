@@ -50,31 +50,59 @@ int aesd_release(struct inode *inode, struct file *filp)
 ssize_t aesd_read(struct file *filp, char __user *buf, size_t count,
                 loff_t *f_pos)
 {
+    struct aesd_dev *read_dev;
+    struct aesd_buffer_entry *current_entry;
+    size_t offset =0;
+    size_t copy_bytes, uncopied_bytes;
     ssize_t retval = 0;
     PDEBUG("read %zu bytes with offset %lld",count,*f_pos);
-    
-    struct aesd_dev *dev = filp->private_data;
-    struct aesd_buffer_entry *start_entry;
-    size_t start_entry_off = 0, read_length = 0;
+    /**
+     * TODO: handle read
+     */
 
-    if (buf == NULL) {
-        return -EFAULT;
-    }
-    start_entry = aesd_circular_buffer_find_entry_offset_for_fpos(&dev->aesd_cb,
-            *f_pos, &start_entry_off);
+    //get the device
+    read_dev = filp->private_data;
 
-    if (start_entry == NULL) {
-        return 0;
-    }  
-    read_length = start_entry->size - start_entry_off;
-    if (read_length > count) {
-        read_length = count;
+    //lock the device
+    mutex_lock(&read_dev->lock);
+
+    //get the entry in the circular buffer at position and offset
+    current_entry = aesd_circular_buffer_find_entry_offset_for_fpos(&read_dev->aesd_cb, *f_pos, &offset);
+
+    if (current_entry==NULL) {
+
+        PDEBUG("no entry found for offset");
+        mutex_unlock(&read_dev->lock);
+        return retval;
     }
-    if (copy_to_user(buf, &(start_entry->buffptr[start_entry_off]), read_length)) {
-        return -EFAULT;
+    //determine number of bytes remaining to copy
+    copy_bytes = current_entry->size -offset;
+    uncopied_bytes = 0;
+
+    //if copy bytes is less than max, copy all. else copy max (count) 
+    if (copy_bytes < count)
+    {
+        uncopied_bytes = copy_to_user(buf, current_entry->buffptr +offset, copy_bytes);
+        if (uncopied_bytes) {
+            retval = -EFAULT;
+        } else {
+            retval = copy_bytes;
+        }
+    } else {
+        uncopied_bytes = copy_to_user(buf, current_entry->buffptr +offset, count);
+        if (uncopied_bytes) {
+            retval = -EFAULT;
+        } else {
+            retval = count;
+        }
     }
-    retval = read_length;
-    *f_pos = *f_pos + read_length;
+    //set reval to be the total bytes copied and update pointer pos
+    *f_pos+= retval;
+
+
+    //unlock the device
+    mutex_unlock(&read_dev->lock);
+
 
     return retval;
 }
@@ -143,7 +171,7 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
     } 
 
     mutex_unlock(&dev->lock);
-    dev->buffer_size += retval;
+    dev->buf_size += retval;
 
     return retval;
 }

@@ -33,7 +33,6 @@ struct aesd_dev
     struct aesd_buffer_entry entry;                 
     char *dev_buf;                          
     size_t buf_size;                        
-    unsigned long buffer_size;              
 };
 
 
