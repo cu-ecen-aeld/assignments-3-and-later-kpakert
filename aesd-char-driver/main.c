@@ -111,67 +111,117 @@ ssize_t aesd_write(struct file *filp, const char __user *buf, size_t count,
                 loff_t *f_pos)
 {
     ssize_t retval = -ENOMEM;
-    PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
-    
-    struct aesd_dev *dev = filp->private_data;
+    struct aesd_dev *write_dev;
+    char *write_data; 
+    size_t newline_index, this_chunk;
+    bool full_packet;
+
     struct aesd_buffer_entry new_entry;
-    uint8_t in_pos = 0;
-    size_t bytes_missing = 0;
+    struct aesd_buffer_entry *last_entry;
 
-    if (buf == NULL) {
-        return -EFAULT;
+
+
+    PDEBUG("write %zu bytes with offset %lld",count,*f_pos);
+    /**
+     * TODO: handle write
+     */
+    //get the device
+    write_dev = filp->private_data;
+
+    //allocate memoy for write data
+    write_data = kmalloc(count, GFP_KERNEL);
+
+    //if allocation fails, return current value
+    if (!write_data)
+    {
+        return retval;
     }
 
-    if (mutex_lock_interruptible(&dev->lock)) {
-        return -ERESTARTSYS;
-    }
-    if (dev->buf_size > 0) {
-
-        dev->dev_buf = krealloc(dev->dev_buf, dev->buf_size + count, GFP_KERNEL);
-        if (!dev->dev_buf) {
-            return -ENOMEM;
-        }
-
-        memset(&dev->dev_buf[dev->buf_size], 0, count);
-
-        bytes_missing = copy_from_user(&dev->dev_buf[dev->buf_size], buf, count);
-
-        retval = count - bytes_missing;
-        dev->buf_size += retval;
-
-    } else {
-        dev->dev_buf = kmalloc(count, GFP_KERNEL);
-        if (!dev->dev_buf) {
-            return -ENOMEM;
-        }
-
-        memset(dev->dev_buf, 0, count);
-
-        bytes_missing = copy_from_user(dev->dev_buf, buf, count);
-
-        retval = count - bytes_missing;
-        dev->buf_size = retval;
+    //copy data into write data from user space, return error on failure
+    if(copy_from_user(write_data, buf, count))
+    {
+        retval = -EFAULT;
+        kfree(write_data);
+        return retval;
     }
 
-    if (memchr(dev->dev_buf, '\n', dev->buf_size)) {
-        if (dev->aesd_cb.full) {
-            in_pos = dev->aesd_cb.in_offs;
-            if (dev->aesd_cb.entry[in_pos].buffptr != NULL) {
-                kfree(dev->aesd_cb.entry[in_pos].buffptr);
-            }
-            dev->aesd_cb.entry[in_pos].size = 0;
+    //lock the device
+    mutex_lock(&write_dev->lock);
+
+    //iterate through data to look for newline character
+
+    newline_index = 0;
+    full_packet = false;
+    while (newline_index < count)
+    {
+        if (write_data[newline_index] == '\n')
+        {
+            full_packet = true;
+            break;
         }
-
-        new_entry.buffptr = dev->dev_buf;
-        new_entry.size = dev->buf_size;
-        aesd_circular_buffer_add_entry(&dev->aesd_cb, &new_entry);
-
-        dev->dev_buf = NULL;
-        dev->buf_size = 0;
+        newline_index++;
     } 
+    if (full_packet) {
+        this_chunk = newline_index+1; //include the newline in the append
+    } else {
+        this_chunk = count; //write all to write buffer
+    }
 
-    mutex_unlock(&dev->lock);
-    dev->buf_size += retval;
+    //initialize write buffer if not already
+    if(write_dev->buf_size == 0)
+    {
+        write_dev->dev_buf = kmalloc(this_chunk, GFP_KERNEL);
+        if(write_dev->dev_buf == NULL) {
+            kfree(write_data);
+            mutex_unlock(&write_dev->lock);
+            return retval;
+        }
+    } else {
+        write_dev->dev_buf = krealloc(write_dev->dev_buf, (write_dev->buf_size + this_chunk), GFP_KERNEL);
+        if(write_dev->dev_buf == NULL) {
+            kfree(write_data);
+            mutex_unlock(&write_dev->lock);
+            return retval;
+        }
+    }
+
+    //copy the indexed data into the device buffer to be written
+    memcpy(write_dev->dev_buf + write_dev->buf_size, write_data, this_chunk);
+    write_dev->buf_size += this_chunk;
+    //printf("I copied data for write\n");
+
+    //if a full packet was recieved we add the buffer into an entry
+    if (full_packet) {
+
+        new_entry.size = write_dev->buf_size;
+        new_entry.buffptr = write_dev->dev_buf;
+
+
+        if (write_dev->aesd_cb.full) 
+        {
+            last_entry = &write_dev->aesd_cb.entry[write_dev->aesd_cb.in_offs];
+            if (last_entry != NULL && last_entry->buffptr != NULL){
+                kfree(last_entry->buffptr);
+            }
+            last_entry->buffptr=NULL;
+            last_entry->size=0;
+        }
+        aesd_circular_buffer_add_entry(&write_dev->aesd_cb, &new_entry);
+
+        //kfree(write_dev->dev_buf);
+        write_dev->buf_size=0;
+    }
+
+    retval = this_chunk;
+
+    if(write_data){
+        kfree(write_data);
+    }
+
+    *f_pos += retval;
+
+    //unlock the device
+    mutex_unlock(&write_dev->lock);
 
     return retval;
 }
