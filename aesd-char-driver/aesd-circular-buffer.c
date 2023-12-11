@@ -65,6 +65,8 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
     // if buffer is full increment the out pointer
     if(buffer->full)
     {
+        buffer->size = buffer[buffer->out_offs].size;
+
         // increment and check for roll over
         if(++buffer->out_offs == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
         {
@@ -74,6 +76,7 @@ void aesd_circular_buffer_add_entry(struct aesd_circular_buffer *buffer, const s
 
     buffer->entry[buffer->in_offs].buffptr = add_entry->buffptr;
     buffer->entry[buffer->in_offs].size = add_entry->size;
+    buffer->size += add_entry->size;
 
     // increment and check for roll over
     if(++buffer->in_offs == AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED)
