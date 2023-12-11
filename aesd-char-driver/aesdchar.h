@@ -4,6 +4,7 @@
  *  Created on: Oct 23, 2019
  *      Author: Dan Walkes
  */
+#include "aesd-circular-buffer.h"
 
 #ifndef AESD_CHAR_DRIVER_AESDCHAR_H_
 #define AESD_CHAR_DRIVER_AESDCHAR_H_
@@ -23,16 +24,14 @@
 #  define PDEBUG(fmt, args...) /* not debugging: nothing */
 #endif
 
-#include "aesd-circular-buffer.h"
-
 struct aesd_dev
 {
+    struct mutex lock; // locking primitive
+    struct aesd_circular_buffer circ_buffer; //circular buffer for dev
+    struct aesd_buffer_entry working_entry; //working entry (for writes before \n)
     struct cdev cdev;     /* Char device structure      */
-    struct aesd_circular_buffer aesd_cb;    
-    struct mutex lock; 
-    struct aesd_buffer_entry entry;                 
-    char *dev_buf;                          
-    size_t buf_size;                        
+    char* dev_buffer;
+    size_t buffer_size;
 };
 
 
